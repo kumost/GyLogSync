@@ -1,0 +1,7 @@
+.build/
+lib/
+lib_static/
+rust-bridge/target/
+*.a
+*.dylib
+.DS_Store
