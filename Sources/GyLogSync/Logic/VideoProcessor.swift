@@ -1,3 +1,8 @@
+// VideoProcessor.swift
+// Copyright (C) 2026 Kumo, Inc.
+// Licensed under the GNU General Public License v3.0
+// https://github.com/kumost/GyLogSync
+
 import Foundation
 import AVFoundation
 
