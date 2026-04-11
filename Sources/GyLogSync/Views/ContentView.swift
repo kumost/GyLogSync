@@ -142,7 +142,7 @@ struct ContentView: View {
                                 .frame(width: 60)
                                 .textFieldStyle(.roundedBorder)
                             Stepper("", value: $timeOffset, in: -86400...86400, step: 0.5)
-                            Text(timeOffset > 0 ? "(Camera is ahead)" : "(Camera is behind)")
+                            Text(timeOffset > 0 ? "(Camera is ahead)" : timeOffset < 0 ? "(Camera is behind)" : "(No offset)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }

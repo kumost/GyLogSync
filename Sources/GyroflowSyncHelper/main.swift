@@ -1,3 +1,8 @@
+// main.swift (GyroflowSyncHelper)
+// Copyright (C) 2026 Kumo, Inc.
+// Licensed under the GNU General Public License v3.0
+// https://github.com/kumost/GyLogSync
+
 // Single-video gyroflow sync helper - runs in subprocess for crash isolation
 // Usage: GyroflowSyncHelper <videoPath> <gcsvPath> <outputPath> [lensProfilePath] [initialOffsetMs] [searchSizeMs]
 // Exit codes: 0=success, 1=error, 139=SIGSEGV (caught by parent)
@@ -86,9 +91,11 @@ func run() async throws {
     }
 
     var frameNo: UInt32 = 0
+    var framePtsUs: [Int64] = []  // Collect per-frame PTS for .gyroflow embedding
     while let sampleBuffer = trackOutput.copyNextSampleBuffer() {
         let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         let timestampUs = Int64(CMTimeGetSeconds(presentationTime) * 1_000_000.0)
+        framePtsUs.append(timestampUs)
 
         if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
             CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
@@ -116,6 +123,22 @@ func run() async throws {
 
     check(gf_finish_sync(ctx, &errorPtr), "finish_sync")
     check(gf_export(ctx, outputPath, &errorPtr), "export")
+
+    // Embed per-frame PTS timestamps into .gyroflow file
+    // This allows OFX plugins to use exact frame timing instead of computing from fps
+    if !framePtsUs.isEmpty {
+        do {
+            let gyroflowData = try Data(contentsOf: URL(fileURLWithPath: outputPath))
+            if var json = try JSONSerialization.jsonObject(with: gyroflowData) as? [String: Any] {
+                json["frame_timestamps_us"] = framePtsUs
+                let updatedData = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
+                try updatedData.write(to: URL(fileURLWithPath: outputPath))
+                fputs("INFO: Embedded \(framePtsUs.count) frame timestamps\n", stderr)
+            }
+        } catch {
+            fputs("WARNING: Failed to embed frame timestamps: \(error)\n", stderr)
+        }
+    }
 
     // Print result to stdout for parent to parse
     print("OK frames=\(frameNo)")
