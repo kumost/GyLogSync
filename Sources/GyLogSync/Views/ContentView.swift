@@ -26,6 +26,24 @@ struct ContentView: View {
     @State private var gyroflowSearchSize: Double = 500
     @State private var gyroflowProcessingRes: Int = 720
     @State private var lensProfilePath: String = ""
+
+    // Built-in lens profile options (iPhone 17 Pro)
+    enum LensOption: String, CaseIterable {
+        case lens24mm = "17 Pro - 24mm (Wide 1x)"
+        case lens13mm = "17 Pro - 13mm (Ultra Wide 0.5x)"
+        case lens100mm = "17 Pro - 100mm (Telephoto 5x)"
+        case none = "None"
+
+        var filename: String? {
+            switch self {
+            case .lens24mm: return "iPhone17pro_24mm.json"
+            case .lens13mm: return "iPhone17pro_13mm.json"
+            case .lens100mm: return "iPhone17pro_100mm.json"
+            case .none: return nil
+            }
+        }
+    }
+    @State private var selectedLens: LensOption = .lens24mm
     
     var body: some View {
         VStack(spacing: 0) {
@@ -147,17 +165,14 @@ struct ContentView: View {
 
                             HStack {
                                 Text("Lens profile:")
-                                TextField("(optional) path to .json", text: $lensProfilePath)
-                                    .textFieldStyle(.roundedBorder)
-                                Button("Browse") {
-                                    let panel = NSOpenPanel()
-                                    panel.allowedContentTypes = [.json]
-                                    panel.allowsMultipleSelection = false
-                                    if panel.runModal() == .OK, let url = panel.url {
-                                        lensProfilePath = url.path
+                                Picker("", selection: $selectedLens) {
+                                    ForEach(LensOption.allCases, id: \.self) { option in
+                                        Text(option.rawValue).tag(option)
                                     }
                                 }
+                                .frame(width: 280)
                             }
+
                         }
                     }
                     .padding(.top, 5)
@@ -365,6 +380,16 @@ struct ContentView: View {
             }
         }
 
+        // Fix ProRes RAW timing (VFR → CFR) before processing
+        if video.pathExtension.lowercased() == "mov" {
+            let fixResult = ProResTimingFixer.fixIfNeeded(url: video)
+            if fixResult.wasFixed {
+                await MainActor.run {
+                    processedFiles.append("Timing Fix: \(video.lastPathComponent) (\(fixResult.anomalousFrames) frames)")
+                }
+            }
+        }
+
         guard let meta = await VideoProcessor.analyze(url: video) else {
             return
         }
@@ -404,7 +429,7 @@ struct ContentView: View {
                 if generateGyroflow {
                     let gyroflowFileName = video.deletingPathExtension().appendingPathExtension("gyroflow").lastPathComponent
                     let gyroflowExportURL = folder.appendingPathComponent(gyroflowFileName)
-                    let lens = lensProfilePath.isEmpty ? nil : lensProfilePath
+                    let lens = resolvedLensProfilePath()
 
                     // Try optical flow sync in subprocess (crash-safe)
                     var syncSucceeded = false
@@ -536,6 +561,32 @@ struct ContentView: View {
         }
     }
     
+    // Resolve lens profile path from selected option
+    func resolvedLensProfilePath() -> String? {
+        guard let filename = selectedLens.filename else { return nil }
+        // Look in app bundle Resources/LensProfiles/
+        let execURL = URL(fileURLWithPath: CommandLine.arguments[0])
+        let resourcesDir = execURL
+            .deletingLastPathComponent()  // MacOS/
+            .deletingLastPathComponent()  // Contents/
+            .appendingPathComponent("Resources")
+            .appendingPathComponent("LensProfiles")
+            .appendingPathComponent(filename)
+        if FileManager.default.fileExists(atPath: resourcesDir.path) {
+            return resourcesDir.path
+        }
+        // Fallback: check next to the executable
+        let nextToExe = execURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("LensProfiles")
+            .appendingPathComponent(filename)
+        if FileManager.default.fileExists(atPath: nextToExe.path) {
+            return nextToExe.path
+        }
+        print("WARNING: Built-in lens profile not found: \(filename)")
+        return nil
+    }
+
     // Helper to extract date from GyLog_MMDD_HHMMSS
     func parseGyLogTimestamp(filename: String, referenceDate: Date) -> Date? {
         // Simple regex or string parsing
