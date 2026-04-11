@@ -1,3 +1,8 @@
+// GCSVParser.swift
+// Copyright (C) 2026 Kumo, Inc.
+// Licensed under the GNU General Public License v3.0
+// https://github.com/kumost/GyLogSync
+
 import Foundation
 
 struct GCSVSample {
@@ -53,11 +58,11 @@ class GCSVParser {
         }
         return headerLines.joined(separator: "\n")
     }
-    
+
     static func export(samples: [GCSVSample], to url: URL, header: String) throws {
         var content = header
         if !content.hasSuffix("\n") { content += "\n" }
-        
+
         content += samples.map { $0.rawLine }.joined(separator: "\n")
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
