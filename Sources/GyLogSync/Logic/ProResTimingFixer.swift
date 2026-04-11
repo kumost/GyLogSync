@@ -8,8 +8,8 @@ import Foundation
 /// Fixes variable frame timing (stts atom) in ProRes RAW MOV files
 /// recorded by the Blackmagic Camera app on iPhone.
 ///
-/// The fix modifies only the MOV container's stts atom (a few bytes).
-/// Video/image data is never touched.
+/// IMPORTANT: The original file is NEVER modified. A copy is created
+/// with "_fixed" suffix and the fix is applied to the copy only.
 class ProResTimingFixer {
 
     struct FixResult {
@@ -18,55 +18,58 @@ class ProResTimingFixer {
         let anomalousFrames: Int
         let wasFixed: Bool
         let message: String
+        /// URL of the fixed copy (nil if no fix was needed or on error)
+        let fixedURL: URL?
     }
 
-    /// Inspect and fix the stts atom if VFR is detected.
-    /// Creates a backup (.mov.bak) before modifying.
+    /// Inspect the stts atom. If VFR is detected, create a fixed COPY.
+    /// The original file is never modified.
     static func fixIfNeeded(url: URL) -> FixResult {
         let filename = url.lastPathComponent
 
         guard url.pathExtension.lowercased() == "mov" else {
             return FixResult(filename: filename, totalFrames: 0, anomalousFrames: 0,
-                           wasFixed: false, message: "Not a MOV file")
+                           wasFixed: false, message: "Not a MOV file", fixedURL: nil)
         }
 
-        guard FileManager.default.isWritableFile(atPath: url.path) else {
+        guard FileManager.default.isReadableFile(atPath: url.path) else {
             return FixResult(filename: filename, totalFrames: 0, anomalousFrames: 0,
-                           wasFixed: false, message: "File is not writable")
+                           wasFixed: false, message: "File is not readable", fixedURL: nil)
         }
 
         do {
-            let fileHandle = try FileHandle(forUpdating: url)
-            defer { try? fileHandle.close() }
+            // Open the ORIGINAL as read-only for analysis
+            let readHandle = try FileHandle(forReadingFrom: url)
+            defer { try? readHandle.close() }
 
-            let fileSize = fileHandle.seekToEndOfFile()
+            let fileSize = readHandle.seekToEndOfFile()
             guard fileSize >= 8 else {
                 return FixResult(filename: filename, totalFrames: 0, anomalousFrames: 0,
-                               wasFixed: false, message: "File too small")
+                               wasFixed: false, message: "File too small", fixedURL: nil)
             }
 
             // 1. Find moov atom
-            guard let (moovOffset, moovSize) = findMoovAtom(fileHandle: fileHandle, fileSize: fileSize) else {
+            guard let (moovOffset, moovSize) = findMoovAtom(fileHandle: readHandle, fileSize: fileSize) else {
                 return FixResult(filename: filename, totalFrames: 0, anomalousFrames: 0,
-                               wasFixed: false, message: "No moov atom found")
+                               wasFixed: false, message: "No moov atom found", fixedURL: nil)
             }
 
             // 2. Find video track's stts using proper atom traversal
-            guard let sttsOffset = findVideoStts(fileHandle: fileHandle, moovOffset: moovOffset, moovSize: moovSize) else {
+            guard let sttsOffset = findVideoStts(fileHandle: readHandle, moovOffset: moovOffset, moovSize: moovSize) else {
                 return FixResult(filename: filename, totalFrames: 0, anomalousFrames: 0,
-                               wasFixed: false, message: "No video stts found")
+                               wasFixed: false, message: "No video stts found", fixedURL: nil)
             }
 
             // 3. Analyze stts
-            guard let sttsInfo = analyzeStts(fileHandle: fileHandle, sttsOffset: sttsOffset) else {
+            guard let sttsInfo = analyzeStts(fileHandle: readHandle, sttsOffset: sttsOffset) else {
                 return FixResult(filename: filename, totalFrames: 0, anomalousFrames: 0,
-                               wasFixed: false, message: "Failed to parse stts")
+                               wasFixed: false, message: "Failed to parse stts", fixedURL: nil)
             }
 
             // 4. Check if fix is needed
             if sttsInfo.entryCount <= 1 {
                 return FixResult(filename: filename, totalFrames: sttsInfo.totalSamples, anomalousFrames: 0,
-                               wasFixed: false, message: "Already CFR")
+                               wasFixed: false, message: "Already CFR", fixedURL: nil)
             }
 
             let anomalousFrames = sttsInfo.entries
@@ -75,22 +78,34 @@ class ProResTimingFixer {
 
             if anomalousFrames == 0 {
                 return FixResult(filename: filename, totalFrames: sttsInfo.totalSamples, anomalousFrames: 0,
-                               wasFixed: false, message: "No anomalies")
+                               wasFixed: false, message: "No anomalies", fixedURL: nil)
             }
 
             guard sttsInfo.totalSamples > 0, sttsInfo.totalSamples <= Int(UInt32.max) else {
                 return FixResult(filename: filename, totalFrames: sttsInfo.totalSamples, anomalousFrames: anomalousFrames,
-                               wasFixed: false, message: "Invalid sample count")
+                               wasFixed: false, message: "Invalid sample count", fixedURL: nil)
             }
 
-            // 5. Create backup before modifying
-            let backupURL = url.appendingPathExtension("bak")
-            if !FileManager.default.fileExists(atPath: backupURL.path) {
-                try FileManager.default.copyItem(at: url, to: backupURL)
+            // Close read handle before copying
+            try? readHandle.close()
+
+            // 5. Create a COPY — never touch the original
+            let baseName = url.deletingPathExtension().lastPathComponent
+            let fixedName = baseName + "_fixed.mov"
+            let fixedURL = url.deletingLastPathComponent().appendingPathComponent(fixedName)
+
+            // Remove old fixed copy if exists
+            if FileManager.default.fileExists(atPath: fixedURL.path) {
+                try FileManager.default.removeItem(at: fixedURL)
             }
 
-            // 6. Write fix: single entry with uniform delta
-            fileHandle.seek(toFileOffset: UInt64(sttsOffset + 12)) // size(4) + 'stts'(4) + version+flags(4)
+            try FileManager.default.copyItem(at: url, to: fixedURL)
+
+            // 6. Open the COPY for writing and apply fix
+            let writeHandle = try FileHandle(forUpdating: fixedURL)
+            defer { try? writeHandle.close() }
+
+            writeHandle.seek(toFileOffset: UInt64(sttsOffset + 12)) // size(4) + 'stts'(4) + version+flags(4)
 
             let entryCount: UInt32 = 1
             let sampleCount: UInt32 = UInt32(sttsInfo.totalSamples)
@@ -101,36 +116,37 @@ class ProResTimingFixer {
             data.append(contentsOf: withUnsafeBytes(of: sampleCount.bigEndian) { Array($0) })
             data.append(contentsOf: withUnsafeBytes(of: sampleDelta.bigEndian) { Array($0) })
 
-            fileHandle.write(data)
+            writeHandle.write(data)
 
             // Zero out remaining entry space
             let remainingBytes = (sttsInfo.entryCount - 1) * 8
             if remainingBytes > 0 {
-                fileHandle.write(Data(count: remainingBytes))
+                writeHandle.write(Data(count: remainingBytes))
             }
 
             // Flush to disk
-            fileHandle.synchronizeFile()
+            writeHandle.synchronizeFile()
 
-            // Remove backup on success
-            try? FileManager.default.removeItem(at: backupURL)
+            // Verify the copy is valid (not truncated)
+            let fixedSize = writeHandle.seekToEndOfFile()
+            guard fixedSize == fileSize else {
+                // Something went wrong — delete the bad copy
+                try? writeHandle.close()
+                try? FileManager.default.removeItem(at: fixedURL)
+                return FixResult(filename: filename, totalFrames: sttsInfo.totalSamples,
+                               anomalousFrames: anomalousFrames, wasFixed: false,
+                               message: "Fixed copy size mismatch — discarded", fixedURL: nil)
+            }
 
-            print("Fixed stts: \(filename) (\(anomalousFrames) frames corrected)")
+            print("Fixed stts: \(filename) → \(fixedName) (\(anomalousFrames) frames corrected)")
 
             return FixResult(filename: filename, totalFrames: sttsInfo.totalSamples,
                            anomalousFrames: anomalousFrames, wasFixed: true,
-                           message: "\(anomalousFrames) frames fixed")
+                           message: "\(anomalousFrames) frames fixed", fixedURL: fixedURL)
 
         } catch {
-            // Restore from backup if write failed
-            let backupURL = url.appendingPathExtension("bak")
-            if FileManager.default.fileExists(atPath: backupURL.path) {
-                try? FileManager.default.removeItem(at: url)
-                try? FileManager.default.moveItem(at: backupURL, to: url)
-                print("Restored from backup after error: \(error)")
-            }
             return FixResult(filename: filename, totalFrames: 0, anomalousFrames: 0,
-                           wasFixed: false, message: "Error: \(error.localizedDescription)")
+                           wasFixed: false, message: "Error: \(error.localizedDescription)", fixedURL: nil)
         }
     }
 
@@ -198,7 +214,6 @@ class ProResTimingFixer {
             let atomType = readAtomType(moovData, offset: pos + 4)
 
             if atomType == "trak" {
-                // Check if this trak is a video track and find its stts
                 if let sttsFileOffset = findSttsInVideoTrak(moovData: moovData, trakOffset: pos, trakSize: size, moovBodyFileOffset: moovBodyOffset) {
                     return sttsFileOffset
                 }
@@ -215,7 +230,6 @@ class ProResTimingFixer {
         let trakBodyStart = trakOffset + 8
         let trakBodyEnd = trakOffset + trakSize
 
-        // Walk atoms inside trak to find mdia
         var pos = trakBodyStart
         while pos + 8 <= trakBodyEnd {
             let size = Int(readUInt32BE(moovData, offset: pos))
@@ -224,7 +238,6 @@ class ProResTimingFixer {
             let atomType = readAtomType(moovData, offset: pos + 4)
 
             if atomType == "mdia" {
-                // Found mdia - check hdlr for video type and find stts
                 if let sttsOffset = findSttsInMdia(moovData: moovData, mdiaOffset: pos, mdiaSize: size, moovBodyFileOffset: moovBodyFileOffset) {
                     return sttsOffset
                 }
@@ -245,7 +258,6 @@ class ProResTimingFixer {
         var minfOffset = -1
         var minfSize = 0
 
-        // Walk atoms inside mdia
         var pos = mdiaBodyStart
         while pos + 8 <= mdiaBodyEnd {
             let size = Int(readUInt32BE(moovData, offset: pos))
@@ -254,8 +266,7 @@ class ProResTimingFixer {
             let atomType = readAtomType(moovData, offset: pos + 4)
 
             if atomType == "hdlr" {
-                // hdlr body: version+flags(4) + pre_defined(4) + handler_type(4)
-                let handlerTypeOffset = pos + 8 + 4 + 4 // atom header(8) + version+flags(4) + pre_defined(4)
+                let handlerTypeOffset = pos + 8 + 4 + 4
                 if handlerTypeOffset + 4 <= pos + size {
                     let handlerType = readAtomType(moovData, offset: handlerTypeOffset)
                     isVideoTrack = (handlerType == "vide")
@@ -270,7 +281,6 @@ class ProResTimingFixer {
 
         guard isVideoTrack, minfOffset >= 0 else { return nil }
 
-        // Walk minf to find stbl
         return findSttsInMinf(moovData: moovData, minfOffset: minfOffset, minfSize: minfSize, moovBodyFileOffset: moovBodyFileOffset)
     }
 
@@ -287,7 +297,6 @@ class ProResTimingFixer {
             let atomType = readAtomType(moovData, offset: pos + 4)
 
             if atomType == "stbl" {
-                // Walk stbl to find stts
                 let stblBodyStart = pos + 8
                 let stblBodyEnd = pos + size
 
@@ -299,7 +308,6 @@ class ProResTimingFixer {
                     let innerType = readAtomType(moovData, offset: innerPos + 4)
 
                     if innerType == "stts" {
-                        // Return absolute file offset of this stts atom
                         return moovBodyFileOffset + innerPos
                     }
 
@@ -322,14 +330,14 @@ class ProResTimingFixer {
         let atomType = readAtomType(headerData, offset: 4)
         guard atomType == "stts" else { return nil }
 
-        let vfData = fileHandle.readData(ofLength: 4) // version + flags
+        let vfData = fileHandle.readData(ofLength: 4)
         guard vfData.count == 4 else { return nil }
 
         let ecData = fileHandle.readData(ofLength: 4)
         guard ecData.count == 4 else { return nil }
         let entryCount = Int(readUInt32BE(ecData, offset: 0))
 
-        guard entryCount > 0, entryCount < 100000 else { return nil } // sanity check
+        guard entryCount > 0, entryCount < 100000 else { return nil }
 
         var entries: [SttsEntry] = []
         for _ in 0..<entryCount {
@@ -342,7 +350,6 @@ class ProResTimingFixer {
 
         let totalSamples = entries.reduce(0) { $0 + $1.count }
 
-        // Find the most common delta (weighted by sample count)
         var deltaCounts: [Int: Int] = [:]
         for entry in entries {
             deltaCounts[entry.delta, default: 0] += entry.count
