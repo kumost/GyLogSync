@@ -1,3 +1,8 @@
+// lib.rs
+// Copyright (C) 2026 Kumo, Inc.
+// Licensed under the GNU General Public License v3.0
+// https://github.com/kumost/GyLogSync
+
 use std::ffi::{CStr, CString};
 use std::fs;
 use std::io::Cursor;
@@ -388,9 +393,18 @@ pub extern "C" fn gf_export(
             .unwrap_or_default()
     };
 
-    let obj = serde_json::json!({
+    // Get lens profile / calibration data if loaded
+    let lens_data = ctx.manager.lens.read();
+    let calibration_data = if lens_data.calib_dimension.w > 0 {
+        lens_data.get_json_value().ok()
+    } else {
+        None
+    };
+    drop(lens_data);
+
+    let mut obj = serde_json::json!({
         "title": "Gyroflow data file",
-        "version": 4,
+        "version": 3,
         "app_version": "1.6.3",
         "videofile": input_file.url,
         "video_info": {
@@ -403,16 +417,52 @@ pub extern "C" fn gf_export(
         },
         "gyro_source": {
             "filepath": gyro.file_url,
-            "imu_orientation": gyro.imu_transforms.imu_orientation,
-            "integration_method": gyro.integration_method,
+            "imu_orientation": "XYZ",
+            "integration_method": 2,
             "file_metadata": file_metadata,
         },
         "offsets": offsets,
         "stabilization": {
             "fov": 1.0,
-            "method": "None",
+            "method": "Default",
+            "smoothing_params": [
+                { "name": "smoothness",       "value": 1.0 },
+                { "name": "smoothness_pitch",  "value": 0.5 },
+                { "name": "smoothness_yaw",    "value": 0.5 },
+                { "name": "smoothness_roll",   "value": 0.5 },
+                { "name": "per_axis",          "value": 0.0 },
+                { "name": "trim_range_only",   "value": 1.0 },
+                { "name": "max_smoothness",    "value": 1.0 },
+                { "name": "alpha_0_1s",        "value": 0.1 },
+            ],
+            "frame_readout_time": 0.0,
+            "frame_readout_direction": "TopToBottom",
+            "adaptive_zoom_window": 0.0,
+            "adaptive_zoom_center_offset": [0.0, 0.0],
+            "adaptive_zoom_method": 1,
+            "additional_rotation": [0.0, 0.0, 0.0],
+            "additional_translation": [0.0, 0.0, 0.0],
+            "lens_correction_amount": 0.05,
+            "horizon_lock_amount": 0.0,
+            "horizon_lock_roll": 0.0,
+            "use_gravity_vectors": false,
+            "horizon_lock_integration_method": 1,
+            "video_speed": 1.0,
+            "video_speed_affects_smoothing": true,
+            "video_speed_affects_zooming": true,
+            "video_speed_affects_zooming_limit": true,
+            "max_zoom": 110.0,
+            "max_zoom_iterations": 5,
+            "frame_offset": 0,
         },
     });
+
+    // Insert calibration_data if lens profile was loaded
+    if let Some(cal) = calibration_data {
+        if let serde_json::Value::Object(ref mut map) = obj {
+            map.insert("calibration_data".to_string(), cal);
+        }
+    }
 
     let data = serde_json::to_string_pretty(&obj).unwrap_or("{}".to_string());
 

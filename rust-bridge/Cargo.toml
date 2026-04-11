@@ -18,3 +18,4 @@ itertools = "0.14"
 [profile.release]
 opt-level = 2
 lto = "thin"
+strip = true

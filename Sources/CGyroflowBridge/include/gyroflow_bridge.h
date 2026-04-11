@@ -1,3 +1,8 @@
+// gyroflow_bridge.h
+// Copyright (C) 2026 Kumo, Inc.
+// Licensed under the GNU General Public License v3.0
+// https://github.com/kumost/GyLogSync
+
 #ifndef GYROFLOW_BRIDGE_H
 #define GYROFLOW_BRIDGE_H
 
