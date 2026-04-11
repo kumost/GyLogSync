@@ -71,8 +71,37 @@ class VideoProcessor {
             return VideoFile(url: url, name: url.lastPathComponent, creationDate: finalDate, duration: duration)
         } catch {
             print("Error processing video \(url.lastPathComponent): \(error)")
-            // Fallback for non-video files or errors
             return nil
         }
+    }
+
+    /// Detect lens type from Blackmagic Camera MOV metadata.
+    /// Reads `com.blackmagic-design.camera.lensType` tag (e.g. "iPhone 17 Pro 24mm").
+    /// Returns the focal length string ("13mm", "24mm", "100mm") or nil.
+    static func detectLens(url: URL) async -> String? {
+        let asset = AVURLAsset(url: url)
+        do {
+            let metadata = try await asset.load(.metadata)
+            for item in metadata {
+                if let key = item.commonKey?.rawValue, key == "make" { continue }
+                guard let identifier = item.identifier else { continue }
+                let idStr = identifier.rawValue
+
+                // Blackmagic writes lens info in quicktime metadata
+                if idStr.contains("lensType") || idStr.contains("model") {
+                    if let value = try? await item.load(.value) as? String {
+                        // Extract focal length: "iPhone 17 Pro 24mm" → "24mm"
+                        if let range = value.range(of: #"\d+mm"#, options: .regularExpression) {
+                            let focalLength = String(value[range])
+                            print("Detected lens for \(url.lastPathComponent): \(value) → \(focalLength)")
+                            return focalLength
+                        }
+                    }
+                }
+            }
+        } catch {
+            print("Lens detection error for \(url.lastPathComponent): \(error)")
+        }
+        return nil
     }
 }
