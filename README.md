@@ -1,6 +1,6 @@
 # GyLogSync v3
 
-macOS app for batch synchronization of GyroLogger GCSV data with video files, producing `.gyroflow` files automatically.
+macOS app for batch synchronization of GyLog GCSV data with video files, producing `.gyroflow` files automatically.
 
 ## Features
 
@@ -72,4 +72,4 @@ This project uses [gyroflow-core](https://github.com/gyroflow/gyroflow) which is
 
 - [Gyroflow](https://gyroflow.xyz/) — Core stabilization and synchronization engine
 - [OpenCV](https://opencv.org/) — Computer vision (optical flow, essential matrix)
-- [GyroLogger](https://kumoinc.com/gylog) — iOS gyro logging app by Kumo, Inc.
+- [GyLog](https://kumoinc.com/gylog) — iOS gyro logging app by Kumo, Inc.
