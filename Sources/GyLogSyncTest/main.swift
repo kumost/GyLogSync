@@ -1,3 +1,8 @@
+// main.swift (GyLogSyncTest)
+// Copyright (C) 2026 Kumo, Inc.
+// Licensed under the GNU General Public License v3.0
+// https://github.com/kumost/GyLogSync
+
 // CLI batch test for Gyroflow sync bridge — full subprocess isolation
 import Foundation
 import AVFoundation
