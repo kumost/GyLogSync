@@ -36,7 +36,7 @@ struct ContentView: View {
     enum LensOption: String, CaseIterable {
         case lens24mm = "17 Pro - 24mm (Wide 1x)"
         case lens13mm = "17 Pro - 13mm (Ultra Wide 0.5x)"
-        case lens100mm = "17 Pro - 100mm (Telephoto 5x)"
+        case lens100mm = "17 Pro - 100mm (Telephoto 4x)"
         case none = "None"
 
         var filename: String? {
@@ -385,17 +385,19 @@ struct ContentView: View {
             }
         }
 
-        // Fix ProRes RAW timing (VFR → CFR) before processing
+        // Fix ProRes RAW timing (VFR → CFR) — creates a fixed COPY, original is never modified
+        var videoForAnalysis = video
         if video.pathExtension.lowercased() == "mov" {
             let fixResult = ProResTimingFixer.fixIfNeeded(url: video)
-            if fixResult.wasFixed {
+            if fixResult.wasFixed, let fixedURL = fixResult.fixedURL {
+                videoForAnalysis = fixedURL
                 await MainActor.run {
-                    processedFiles.append("Timing Fix: \(video.lastPathComponent) (\(fixResult.anomalousFrames) frames)")
+                    processedFiles.append("Timing Fix: \(video.lastPathComponent) → \(fixedURL.lastPathComponent) (\(fixResult.anomalousFrames) frames)")
                 }
             }
         }
 
-        guard let meta = await VideoProcessor.analyze(url: video) else {
+        guard let meta = await VideoProcessor.analyze(url: videoForAnalysis) else {
             return
         }
 
