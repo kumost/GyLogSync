@@ -554,7 +554,7 @@ struct ContentView: View {
                               let aStartStr = Date(timeIntervalSince1970: audioStartAbs).formatted(date: .omitted, time: .standard)
                               
                               await MainActor.run {
-                                 processedFiles.append("Debug: Video(\(vStartStr)) vs Audio(\(aStartStr))")
+                                 processedFiles.append("No overlap: Video(\(vStartStr)) vs Audio(\(aStartStr))")
                                  processedFiles.append("Diff: \(audioStartAbs - start) sec")
                               }
                          }
