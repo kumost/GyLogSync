@@ -10,8 +10,7 @@ import Foundation
 ///
 /// The fix modifies ONLY the stts atom in the MOV container (a few bytes
 /// of timing metadata). Video and audio data are never touched.
-/// The fix must be permanent because DaVinci Resolve needs the corrected
-/// CFR timing to match the .gyroflow stabilization data.
+/// The fix is applied in-place. Users should back up their files before processing.
 class ProResTimingFixer {
 
     struct FixResult {
@@ -22,7 +21,7 @@ class ProResTimingFixer {
         let message: String
     }
 
-    /// Inspect and fix the stts atom if VFR is detected.
+    /// Inspect and fix the stts atom in-place if VFR is detected.
     /// Modifies only a few bytes of timing metadata in the container.
     static func fixIfNeeded(url: URL) -> FixResult {
         let filename = url.lastPathComponent

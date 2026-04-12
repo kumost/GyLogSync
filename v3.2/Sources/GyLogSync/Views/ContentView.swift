@@ -26,31 +26,12 @@ struct ContentView: View {
     // Audio processing option
     @State private var skipAudioProcessing = false
 
-    // Gyroflow processing options
-    @State private var generateGyroflow = true
-    @State private var gyroflowSearchSize: Double = 500
-    @State private var gyroflowProcessingRes: Int = 720
-    @State private var lensProfilePath: String = ""
-
-    // Built-in lens profile options (iPhone 17 Pro)
-    enum LensOption: String, CaseIterable {
-        case lens24mm = "17 Pro - 24mm (Wide 1x)"
-        case none = "None (Manual)"
-
-        var filename: String? {
-            switch self {
-            case .lens24mm: return "iPhone17pro_24mm.json"
-            case .none: return nil
-            }
-        }
-    }
-    @State private var selectedLens: LensOption = .lens24mm
     
     var body: some View {
         VStack(spacing: 0) {
             // Minimal Header
             HStack {
-                Text("GyLog Sync v3")
+                Text("GyLog Sync v3.2")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundColor(.primary)
                 Spacer()
@@ -143,38 +124,6 @@ struct ContentView: View {
                                 .foregroundColor(.secondary)
                         }
 
-                        Divider()
-
-                        // Gyroflow Options
-                        Toggle(isOn: $generateGyroflow) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Generate .gyroflow files")
-                                    .font(.body)
-                                Text("Auto-sync gyro data with video using optical flow")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-
-                        if generateGyroflow {
-                            HStack {
-                                Text("Sync search range (ms):")
-                                TextField("500", value: $gyroflowSearchSize, formatter: NumberFormatter())
-                                    .frame(width: 80)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-
-                            HStack {
-                                Text("Lens profile:")
-                                Picker("", selection: $selectedLens) {
-                                    ForEach(LensOption.allCases, id: \.self) { option in
-                                        Text(option.rawValue).tag(option)
-                                    }
-                                }
-                                .frame(width: 280)
-                            }
-
-                        }
                     }
                     .padding(.top, 5)
                 }
@@ -381,13 +330,16 @@ struct ContentView: View {
             }
         }
 
-        // Fix ProRes RAW timing (VFR → CFR) — patches stts in-place (a few bytes only, video data untouched)
-        // The fix must be PERMANENT so DaVinci Resolve reads correct CFR timing
+        // Fix ProRes RAW timing (VFR → CFR) — patches stts in-place
         if video.pathExtension.lowercased() == "mov" {
             let fixResult = ProResTimingFixer.fixIfNeeded(url: video)
-            if fixResult.wasFixed {
-                await MainActor.run {
-                    processedFiles.append("Timing Fix: \(video.lastPathComponent) (\(fixResult.anomalousFrames) frames)")
+            await MainActor.run {
+                if fixResult.wasFixed {
+                    processedFiles.append("Timing Fix: \(video.lastPathComponent) (\(fixResult.anomalousFrames) frames corrected)")
+                } else if fixResult.message == "Already CFR" || fixResult.message == "No anomalies" {
+                    processedFiles.append("Timing OK: \(video.lastPathComponent) (already CFR)")
+                } else {
+                    processedFiles.append("Timing: \(video.lastPathComponent) — \(fixResult.message)")
                 }
             }
         }
@@ -426,53 +378,6 @@ struct ContentView: View {
                     }
                 } catch {
                     print("Export error: \(error)")
-                }
-                // C. Generate .gyroflow file (after GCSV export)
-                if generateGyroflow {
-                    let gyroflowFileName = video.deletingPathExtension().appendingPathExtension("gyroflow").lastPathComponent
-                    let gyroflowExportURL = folder.appendingPathComponent(gyroflowFileName)
-                    let lens = resolvedLensProfilePath()
-
-                    // Try optical flow sync in subprocess (crash-safe)
-                    var syncSucceeded = false
-                    do {
-                        try await GyroflowProcessor.syncInSubprocess(
-                            videoPath: video.path,
-                            gcsvPath: exportURL.path,
-                            outputPath: gyroflowExportURL.path,
-                            lensProfilePath: lens,
-                            initialOffsetMs: timeOffset * 1000.0,
-                            searchSizeMs: gyroflowSearchSize
-                        )
-                        syncSucceeded = true
-                        await MainActor.run {
-                            processedFiles.append("Gyroflow: \(gyroflowFileName)")
-                        }
-                    } catch {
-                        print("Gyroflow subprocess sync failed: \(error), falling back to timestamp-based export")
-                    }
-
-                    // Fallback: timestamp-based export (no optical flow, no crash risk)
-                    if !syncSucceeded {
-                        do {
-                            let fallbackProcessor = try GyroflowProcessor()
-                            try await fallbackProcessor.timestampExport(
-                                videoPath: video.path,
-                                gcsvPath: exportURL.path,
-                                outputPath: gyroflowExportURL.path,
-                                lensProfilePath: lens,
-                                offsetMs: timeOffset * 1000.0
-                            )
-                            await MainActor.run {
-                                processedFiles.append("Gyroflow (fallback): \(gyroflowFileName)")
-                            }
-                        } catch {
-                            print("Gyroflow timestamp export also failed: \(error)")
-                            await MainActor.run {
-                                processedFiles.append("Gyroflow Error: \(error.localizedDescription)")
-                            }
-                        }
-                    }
                 }
             } else {
                 print("No overlapping data for video: \(video.lastPathComponent)")
@@ -563,32 +468,6 @@ struct ContentView: View {
         }
     }
     
-    // Resolve lens profile path from selected option
-    func resolvedLensProfilePath() -> String? {
-        guard let filename = selectedLens.filename else { return nil }
-        // Look in app bundle Resources/LensProfiles/
-        let execURL = URL(fileURLWithPath: CommandLine.arguments[0])
-        let resourcesDir = execURL
-            .deletingLastPathComponent()  // MacOS/
-            .deletingLastPathComponent()  // Contents/
-            .appendingPathComponent("Resources")
-            .appendingPathComponent("LensProfiles")
-            .appendingPathComponent(filename)
-        if FileManager.default.fileExists(atPath: resourcesDir.path) {
-            return resourcesDir.path
-        }
-        // Fallback: check next to the executable
-        let nextToExe = execURL
-            .deletingLastPathComponent()
-            .appendingPathComponent("LensProfiles")
-            .appendingPathComponent(filename)
-        if FileManager.default.fileExists(atPath: nextToExe.path) {
-            return nextToExe.path
-        }
-        print("WARNING: Built-in lens profile not found: \(filename)")
-        return nil
-    }
-
     // Helper to extract date from GyLog_MMDD_HHMMSS
     func parseGyLogTimestamp(filename: String, referenceDate: Date) -> Date? {
         // Simple regex or string parsing

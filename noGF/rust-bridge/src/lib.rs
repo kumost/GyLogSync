@@ -422,6 +422,10 @@ pub extern "C" fn gf_export(
             "file_metadata": file_metadata,
         },
         "offsets": offsets,
+        "background_color": [0.0, 0.0, 0.0, 1.0],
+        "background_mode": 0,
+        "background_margin": 0.0,
+        "background_margin_feather": 0.0,
         "stabilization": {
             "fov": 1.0,
             "method": "Default",

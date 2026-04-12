@@ -1,75 +1,45 @@
-# GyLogSync v3
+# GyLogSync
 
-macOS app for batch synchronization of GyLog GCSV data with video files, producing `.gyroflow` files automatically.
+Batch tool for iPhone ProRes RAW stabilization workflow with [GyLog](https://apps.apple.com/app/gylog/id6502541443) gyro data.
 
-## Features
+## Downloads
 
-- Drag & drop videos and GCSV gyro logs
-- Automatically slices master GCSV log to match each video's time range
-- Optical flow synchronization (using gyroflow-core) to compute precise gyro-video offsets
-- Exports `.gyroflow` files ready for use in DaVinci Resolve, Final Cut Pro, etc.
-- Crash-safe subprocess isolation for videos with insufficient motion
-- Timestamp-based fallback when optical flow fails
-- Fully self-contained binary (no external dependencies required)
+- **[GyLogSync v3.2](https://github.com/kumost/GyLogSync/releases/tag/v3.2)** — Recommended. Requires [Gyroflow Desktop](https://gyroflow.xyz/) for sync.
+- **[GyLogSync noGF (β)](https://github.com/kumost/GyLogSync/releases/tag/v3.2-noGF)** — Beta. Gyroflow Desktop not required, but sync accuracy may vary.
+
+## GyLogSync v3.2
+
+- ProRes RAW timing fix (VFR → CFR)
+- Log splitting — splits one .gcsv session into per-clip .gcsv files
+- Audio trimming — trims audio recording to match each video clip
+
+Source code: [`v3.2/`](v3.2/)
+
+## GyLogSync noGF (β)
+
+All v3.2 features plus:
+- Automatic .gyroflow file generation (no Gyroflow Desktop needed)
+
+Source code: [`noGF/`](noGF/)
+
+## Workflow
+
+### v3.2 (Recommended)
+1. Record ProRes RAW video + gyro data (.gcsv) with GyLog iOS app
+2. Drop files into GyLogSync → fixes timing + outputs per-clip .gcsv + trimmed audio
+3. Open the .mov and .gcsv in **Gyroflow Desktop** for sync and stabilization
+4. Load the .gyroflow file into DaVinci Resolve via Gyroflow OFX plugin
+
+### noGF (β)
+1. Record ProRes RAW video + gyro data (.gcsv) with GyLog iOS app
+2. Drop files into GyLogSync noGF → fixes timing + outputs .gcsv + .gyroflow + trimmed audio
+3. Load the .gyroflow file directly into DaVinci Resolve via Gyroflow OFX plugin
 
 ## Requirements
 
-- macOS 13.0 or later (Apple Silicon)
-
-## Building from Source
-
-### Prerequisites
-
-- Rust toolchain (`rustup`)
-- Swift 5.7+
-- OpenCV 4.x (`brew install opencv`)
-- Homebrew
-
-### Build Steps
-
-```bash
-# 1. Build the Rust bridge
-cd rust-bridge
-cargo build --release
-cd ..
-
-# 2. Copy the static library
-mkdir -p lib
-cp rust-bridge/target/release/libgylogsync_bridge.a lib/
-
-# 3. Copy OpenCV static libraries
-mkdir -p lib_static
-for lib in core imgproc features2d flann calib3d video optflow ximgproc; do
-    cp /opt/homebrew/opt/opencv/lib/libopencv_${lib}.a lib_static/
-done
-cp /opt/homebrew/opt/opencv/lib/libade.a lib_static/
-cp /opt/homebrew/opt/opencv/lib/libittnotify.a lib_static/
-cp /opt/homebrew/opt/opencv/lib/libtegra_hal.a lib_static/
-cp /opt/homebrew/lib/libtbb.a lib_static/
-for f in libkleidicv.a libkleidicv_hal.a libkleidicv_thread.a; do
-    cp /opt/homebrew/opt/opencv/lib/$f lib_static/
-done
-
-# 4. Build Swift targets
-swift build -c release --product GyLogSync
-swift build -c release --product GyroflowSyncHelper
-```
-
-## Usage
-
-1. Launch `GyLogSync`
-2. Drag & drop a folder containing `.mov` videos and `.gcsv` gyro logs
-3. Click **Sync**
-4. `.gyroflow` files are generated next to each video
+- macOS 12 Monterey or later
+- Blackmagic Camera app (recommended: set Reference Source to **Internal**)
 
 ## License
 
-This project is licensed under the **GNU General Public License v3.0** (GPL-3.0).
-
-This project uses [gyroflow-core](https://github.com/gyroflow/gyroflow) which is licensed under GPL-3.0.
-
-## Credits
-
-- [Gyroflow](https://gyroflow.xyz/) — Core stabilization and synchronization engine
-- [OpenCV](https://opencv.org/) — Computer vision (optical flow, essential matrix)
-- [GyLog](https://kumoinc.com/gylog) — iOS gyro logging app by Kumo, Inc.
+GPL v3.0 — See [LICENSE](LICENSE)
