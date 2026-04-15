@@ -5,7 +5,7 @@ Batch tool for iPhone ProRes RAW stabilization workflow with [GyLog](https://app
 ## Downloads
 
 - **[GyLogSync v3.2](https://github.com/kumost/GyLogSync/releases/tag/v3.2)** — Recommended. Requires [Gyroflow Desktop](https://gyroflow.xyz/) for sync.
-- **[GyLogSync noGF (β)](https://github.com/kumost/GyLogSync/releases/tag/v3.2-noGF)** — Beta. Gyroflow Desktop not required, but sync accuracy may vary.
+- **[GyLogSync Direct (β)](https://github.com/kumost/GyLogSync/releases/tag/v3.2-direct)** — Beta. Gyroflow Desktop not required, but sync accuracy may vary.
 
 ## GyLogSync v3.2
 
@@ -15,12 +15,12 @@ Batch tool for iPhone ProRes RAW stabilization workflow with [GyLog](https://app
 
 Source code: [`v3.2/`](v3.2/)
 
-## GyLogSync noGF (β)
+## GyLogSync Direct (β)
 
 All v3.2 features plus:
 - Automatic .gyroflow file generation (no Gyroflow Desktop needed)
 
-Source code: [`noGF/`](noGF/)
+Source code: [`direct/`](direct/)
 
 ## Workflow
 
@@ -30,9 +30,9 @@ Source code: [`noGF/`](noGF/)
 3. Open the .mov and .gcsv in **Gyroflow Desktop** for sync and stabilization
 4. Load the .gyroflow file into DaVinci Resolve via Gyroflow OFX plugin
 
-### noGF (β)
+### Direct (β)
 1. Record ProRes RAW video + gyro data (.gcsv) with GyLog iOS app
-2. Drop files into GyLogSync noGF → fixes timing + outputs .gcsv + .gyroflow + trimmed audio
+2. Drop files into GyLogSync Direct → fixes timing + outputs .gcsv + .gyroflow + trimmed audio
 3. Load the .gyroflow file directly into DaVinci Resolve via Gyroflow OFX plugin
 
 ## Requirements

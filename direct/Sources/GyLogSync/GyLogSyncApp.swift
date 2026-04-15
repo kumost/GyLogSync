@@ -11,7 +11,7 @@ struct GyLogSyncApp: App {
         WindowGroup {
             ContentView()
                 .frame(minWidth: 700, minHeight: 650)
-                .navigationTitle("GyLog Sync")
+                .navigationTitle("GyLog Sync Direct")
         }
         .windowStyle(.hiddenTitleBar)
     }

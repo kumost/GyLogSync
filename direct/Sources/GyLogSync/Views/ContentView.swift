@@ -47,7 +47,7 @@ struct ContentView: View {
         VStack(spacing: 0) {
             // Minimal Header
             HStack {
-                Text("GyLog Sync noGF (β)")
+                Text("GyLog Sync Direct (β)")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundColor(.primary)
                 Spacer()
